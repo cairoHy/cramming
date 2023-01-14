@@ -11,7 +11,7 @@ from collections import defaultdict
 
 import cramming
 
-log = logging.getLogger(__name__)
+log = logging.getLogger(__name__)  
 
 
 def main_training_process(cfg, setup):
@@ -37,7 +37,7 @@ def main_training_process(cfg, setup):
     training_allowed = True
     loss_vals = []
 
-    iterable_data = enumerate(dataloader)
+    iterable_data = enumerate(dataloader)   ###加载数据
     if cfg.train.gradinit.enabled:
         model_engine.gradinit(iterable_data, cfg.train.optim, cfg.train.gradinit)
 
@@ -48,7 +48,8 @@ def main_training_process(cfg, setup):
         loss = model_engine.step(device_batch)
         loss_vals.append(loss.detach())
 
-        # Check stopping criteria
+        # Check stopping criteria 
+        # ###检查停止条件
         if check_deadline(wallclock_timer, cfg.budget) or step == cfg.train.steps:
             training_allowed = False
             log.info("Reached deadline. Stopping training ...")
@@ -76,7 +77,7 @@ def main_training_process(cfg, setup):
         if (cfg.dryrun and step > 2) or not training_allowed:
             break
 
-    if cramming.utils.is_main_process():
+    if cramming.utils.is_main_process():###保存文件
         # Save to summary:
         metrics = dict(num_params=sum([p.numel() for p in model.parameters()]))
         cramming.utils.save_summary("pretrain", cfg, metrics, stats, time.time() - local_time, setup)
@@ -86,13 +87,13 @@ def main_training_process(cfg, setup):
         model_engine.save_final_model(os.path.join(cfg.base_dir, cfg.name), checkpoint_id, tokenizer, cfg.arch, cfg.dryrun)
 
 
-def check_deadline(launch_time, hour_limit):
+def check_deadline(launch_time, hour_limit):   ###检查结束训练
     """These measurements are deliberately wall-clock based."""
     current_time = time.time()
     return True if (current_time - launch_time) / 3600 > hour_limit else False
 
 
-def check_early_termination(launch_time, loss, early_termination):
+def check_early_termination(launch_time, loss, early_termination):###因其他原因提前结束训练
     """Early termination based on terrible loss."""
     if early_termination.enabled and loss > early_termination.loss_threshold:
         current_time = time.time()
