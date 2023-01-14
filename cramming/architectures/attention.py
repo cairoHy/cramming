@@ -78,7 +78,7 @@ class BertAttentionWrapper(BertSelfAttention):
         super().__init__(config)
         self.output_dim = hidden_size
 
-    def forward(self, hidden_states, attention_mask: Optional[torch.Tensor] = None):
+    def forward(self, hidden_states, attention_mask: Optional[torch.Tensor] = None):###前向传递
         return super().forward(hidden_states, attention_mask)[0]
 
 
@@ -161,7 +161,7 @@ class SeqFirstSelfAttention(torch.nn.Module):
         else:
             raise ValueError(f"Invalid sequence operation {cfg_attention.sequence_op} given.")
         if cfg_attention.low_level_fusion:
-            self.sequence_op = torch.jit.script(self.sequence_op)
+            self.sequence_op = torch.jit.script(self.sequence_op)  ### 使用TorchScript编译器将其编译为TorchScript代码
 
         self.attention_dropout: float = cfg_attention.dropout_prob
 
@@ -169,15 +169,27 @@ class SeqFirstSelfAttention(torch.nn.Module):
         # ===================================
         # Raw attention scores. [b, np, s, s]
         # ===================================
+        
+        ### 把输入 Input 经过线性变换分别得到 Q、K、V。
+        # Q、K、V 都来自于 Input，只不过是线性变换的矩阵的权值不同。
+        # 这里可通过一个全连接层，
+        # 将 K、V、Q 映射到维度较低的子空间。
+        # 对 Q 和 K 做 dot Product，得到输入 Input 词与词之间的依赖关系，
+        # 然后经过尺度变换（scale）、掩码（mask）和 softmax 操作，
+        # 得到最终的 self attention 矩阵。尺度变换是为了防止输入值过大导致训练不稳定，
+        # mask 是为了保证时间的先后关系（用于解码器）
 
         # [b, np, sq, sk]
+        #确定输出矩阵维度
         output_size = (query_layer.shape[1], query_layer.shape[2], query_layer.shape[0], key_layer.shape[0])
 
         # [sq, b, np, hn] -> [sq, b * np, hn]
-        query_layer = query_layer.view(output_size[2], output_size[0] * output_size[1], -1)
+        ###调整QK矩阵维度，方便后续矩阵相乘
+        query_layer = query_layer.view(output_size[2], output_size[0] * output_size[1], -1)  
         key_layer = key_layer.view(output_size[3], output_size[0] * output_size[1], -1)
 
-        # preallocating result tensor: [b * np, sq, sk]
+        # preallocating result tensor: [b * np, sq, sk]   
+        ###创建空矩阵
         matmul_result = torch.empty(
             output_size[0] * output_size[1],
             output_size[2],
@@ -187,6 +199,7 @@ class SeqFirstSelfAttention(torch.nn.Module):
         )  # this looks crazy but beta=0 below skips the values of this tensor [so beta is NOT optional...]
 
         # Raw attention scores. [b * np, sq, sk]
+        ### Q K相乘，之后加 matmul_result，防止出现bug
         matmul_result = torch.baddbmm(
             matmul_result,
             query_layer.transpose(0, 1),  # [b * np, sq, hn]
@@ -196,12 +209,14 @@ class SeqFirstSelfAttention(torch.nn.Module):
         )
 
         # change view to [b, np, sq, sk]
+        ### 调整矩阵维度
         attention_scores = matmul_result.view(output_size[0], output_size[1], output_size[2], output_size[3])
 
         # ===========================
         # Attention probs and dropout
         # ===========================
         # attention scores and attention mask [b, np, sq, sk]
+        ### 计算注意力分数//概率
         attention_probs = self.sequence_op(attention_scores, attention_mask)
 
         # This is actually dropping out entire tokens to attend to, which might
@@ -226,6 +241,7 @@ class SeqFirstSelfAttention(torch.nn.Module):
         attention_probs = attention_probs.view(output_size[0] * output_size[1], output_size[2], -1)
 
         # matmul: [b * np, sq, hn]
+        ### 矩阵相乘
         context_layer = torch.bmm(attention_probs, value_layer.transpose(0, 1))
 
         # change view [b, np, sq, hn]
