@@ -22,7 +22,7 @@ def prepare_task_dataloaders(tokenizer, cfg_eval, cfg_impl):
     tasks = defaultdict(dict)
 
     for task_name, task_details in cfg_eval.tasks.items():
-        log.info(f"Preparing data for task {task_name}.")
+        log.info(f"Preparing data for task {task_name}.")  ###准备数据
         tasks[task_name]["details"] = task_details
         raw_datasets = load_dataset(task_details.collection, task_name, cache_dir=cfg_impl.path)
         if not task_details.regression:
@@ -35,7 +35,7 @@ def prepare_task_dataloaders(tokenizer, cfg_eval, cfg_impl):
         sentence1_key, sentence2_key = task_details.structure
 
         def preprocess_function(examples):
-            # Tokenize the texts
+            # Tokenize the texts    ####分词
             texts = (examples[sentence1_key],) if sentence2_key is None else (examples[sentence1_key], examples[sentence2_key])
             result = tokenizer(
                 *texts,
